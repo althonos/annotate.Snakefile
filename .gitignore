@@ -125,4 +125,10 @@ dmypy.json
 # Snakemake
 .snakemake/
 
+# Snakemake intermediate files
+blast/
+catalog/
+db/
+output/
+
 # End of https://www.gitignore.io/api/python,snakemake
