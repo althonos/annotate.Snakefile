@@ -9,6 +9,7 @@ from Bio.Blast.Applications import NcbiblastnCommandline
 # --- Configuration -------------------------------
 
 REFERENCE = config.get("reference", os.path.basename(next(glob.iglob("reference/*"))))
+CLEAR = config.get("clear", False)
 
 
 # --- Rules ---------------------------------------
@@ -26,7 +27,7 @@ rule clean:
     """
 
     input:
-        filter(os.path.exists, ("blast", "catalog", "db", "features"))
+        filter(os.path.exists, ("blast", "catalog", "db", "features", "output"))
 
     run:
         for directory in input:
@@ -131,6 +132,10 @@ rule copyFeatures:
         record = Bio.SeqIO.read(input[0], "genbank")
         with open(input[1]) as handle:
             result = next(Bio.Blast.NCBIXML.parse(handle))
+
+        # remove existing features if desired
+        if CLEAR:
+            record.features.clear()
 
         # FIXME: copy features only if alignment has 100% identity
         for alignment in result.alignments:
