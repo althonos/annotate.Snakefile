@@ -3,6 +3,7 @@ import os
 import shutil
 
 import Bio.SeqIO
+import Bio.Blast.NCBIXML
 from Bio.Blast.Applications import NcbiblastnCommandline
 
 # --- Configuration -------------------------------
@@ -12,25 +13,36 @@ REFERENCE = config.get("reference", os.path.basename(next(glob.iglob("reference/
 
 # --- Rules ---------------------------------------
 
-
 rule all:
+    """Annotate all sequences in the `input` directory.
+    """
+
     input:
         [x.replace("input", "output").replace(".gb", ".annotated.gb") for x in glob.iglob("input/*.gb")]
 
 
 rule clean:
+    """Remove temporary files.
+    """
+
     input:
-        filter(os.path.exists, ("blast", "catalog", "db", "features", "output"))
+        filter(os.path.exists, ("blast", "catalog", "db", "features"))
+
     run:
         for directory in input:
             shutil.rmtree(directory)
 
 
-rule makeCatalog:
+rule extractFeatures:
+    """Build a catalog of features from reference sequences.
+    """
+
     input:
         "reference/{sequences}"
+
     output:
-        directory("features/{sequences}"), "catalog/{sequences}.fa"
+        directory("features/{sequences}")
+
     run:
         features = {}
         # extract each feature into an individual record
@@ -43,28 +55,44 @@ rule makeCatalog:
                 if feat.strand < 0:
                     feat_record = feat_record.reverse_complement(features=True)
                 feat_record.id = feat_record.name = "{}.{}".format(record.id, idx)
+                feat_record.description = ""
                 features[str(feat_record.seq)] = feat_record
         # write each feature as an individual genbank file
         os.makedirs(output[0], exist_ok=True)
         for feat_record in features.values():
             with open(os.path.join(output[0], "{}.gb".format(feat_record.id)), 'w') as f:
                 Bio.SeqIO.write(feat_record, f, 'genbank')
-        # write all features into a single FASTA file
-        with open(output[1], 'w') as f:
-            Bio.SeqIO.write(features.values(), f, 'fasta')
+
+
+rule makeCatalog:
+    """Build a FASTA catalog of sequences from a directory of GenBank files.
+    """
+
+    input:
+        "features/{sequences}"
+
+    output:
+        "catalog/{sequences}.fa"
+
+    run:
+        features = [Bio.SeqIO.read(gb, 'gb') for gb in glob.iglob(os.path.join(input[0], "*.gb"))]
+        with open(output[0], 'w') as f:
+            Bio.SeqIO.write(features, f, 'fasta')
 
 
 rule makeBlastDb:
     """Build a BLASTn database from a catalog of sequences.
     """
+
     input:
         "catalog/{sequences}.fa"
+
     output:
         expand("db/{{sequences}}.{ext}", ext=["nhr", "nin", "nsq"])
+
     log:
         "db/{sequences}.log"
-    wildcard_constraints:
-        sequences = ".+"
+
     shell:
         "makeblastdb -dbtype nucl -out db/{wildcards.sequences} -title 'Annotations' -in {input} 2>&1 >{log}"
 
@@ -72,23 +100,54 @@ rule makeBlastDb:
 rule runBlastN:
     """Run a BLASTn query against a reference BLASTn database.
     """
+
     input:
         "input/{sequence}.gb", "db/{reference}.nhr"
+
     output:
         "blast/{sequence}.{reference}.blastxml"
+
     log:
         "blast/{sequence}.{reference}.log"
+
     shell:
-        "blastn -db db/{wildcards.reference} -query {input[0]}  >{output}  2>{log}"
+        "blastn -task blastn-short -ungapped -outfmt 5 -db db/{wildcards.reference} -query {input[0]} >{output} 2>{log}"
 
 
-rule copyAnnotations:
-    """Annotate a sequence using the BLASTn result.
+rule copyFeatures:
+    """Copy features from reference sequences using BLASTn results as a guide.
     """
+
     input:
-        expand("blast/{{sequence}}.{reference}.blastxml", reference=REFERENCE)
+        "input/{sequence}.gb",
+        expand("blast/{{sequence}}.{reference}.blastxml", reference=REFERENCE),
+        expand("features/{reference}", reference=REFERENCE)
+
     output:
         "output/{sequence}.annotated.gb"
-    run:
-        shutil.copy(f"input/{wildcards.sequence}.gb", output[0])
 
+    run:
+        # load the query record input sequence
+        record = Bio.SeqIO.read(input[0], "genbank")
+        with open(input[1]) as handle:
+            result = next(Bio.Blast.NCBIXML.parse(handle))
+
+        # FIXME: copy features only if alignment has 100% identity
+        for alignment in result.alignments:
+            hsp = alignment.hsps[0]
+            if hsp.identities == hsp.align_length:
+                # get the GenBank file corresponding to the feature
+                hit_gb = os.path.join(input[2], "{}.gb".format(alignment.hit_def))
+                hit_record = Bio.SeqIO.read(hit_gb, "genbank")
+                # use the reverse complement if it is on the reverse strand
+                if hit_record.seq not in record.seq:
+                    hit_record = hit_record.reverse_complement(features=True)
+                # position the feature on the query record
+                hit_feat = hit_record.features[0]
+                hit_feat.location += record.seq.find(hit_record.seq)
+                # add the feature to the query record
+                record.features.append(hit_feat)
+
+        # write the query record
+        with open(output[0], 'w') as f:
+            Bio.SeqIO.write(record, f, "genbank")
