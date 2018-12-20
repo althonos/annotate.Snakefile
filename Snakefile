@@ -140,7 +140,7 @@ rule copyFeatures:
         # FIXME: copy features only if alignment has 100% identity
         for alignment in result.alignments:
             hsp = alignment.hsps[0]
-            if hsp.identities == hsp.align_length:
+            if (hsp.identities / hsp.align_length) > 0.98:
                 # get the GenBank file corresponding to the feature
                 hit_gb = os.path.join(input[2], "{}.gb".format(alignment.hit_def))
                 hit_record = Bio.SeqIO.read(hit_gb, "genbank")
@@ -149,7 +149,8 @@ rule copyFeatures:
                     hit_record = hit_record.reverse_complement(features=True)
                 # position the feature on the query record
                 hit_feat = hit_record.features[0]
-                hit_feat.location += record.seq.find(hit_record.seq)
+                hit_feat.location += record.seq.find(hsp.query)
+
                 # add the feature to the query record
                 record.features.append(hit_feat)
 
