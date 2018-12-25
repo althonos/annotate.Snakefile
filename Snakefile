@@ -12,7 +12,7 @@ REFERENCE = config.get("reference", os.path.basename(next(glob.iglob("reference/
 CLEAR = config.get("clear", False)
 
 
-# --- Rules ---------------------------------------
+# --- Maintenance rules ------------------------------------------------------
 
 rule all:
     """Annotate all sequences in the `input` directory.
@@ -34,15 +34,17 @@ rule clean:
             shutil.rmtree(directory)
 
 
+# --- Step 1: Extract features from reference GenBank files ------------------
+
 rule extractFeatures:
     """Build a catalog of features from reference sequences.
     """
 
     input:
-        "reference/{sequences}"
+        "reference/{reference}"
 
     output:
-        directory("features/{sequences}")
+        directory("features/{reference}")
 
     run:
         features = {}
@@ -65,15 +67,17 @@ rule extractFeatures:
                 Bio.SeqIO.write(feat_record, f, 'genbank')
 
 
+# --- Step 2: Build a FASTA catalog of reference features --------------------
+
 rule makeCatalog:
     """Build a FASTA catalog of sequences from a directory of GenBank files.
     """
 
     input:
-        "features/{sequences}"
+        "features/{reference}"
 
     output:
-        "catalog/{sequences}.fa"
+        "catalog/{reference}.fa"
 
     run:
         features = [Bio.SeqIO.read(gb, 'gb') for gb in glob.iglob(os.path.join(input[0], "*.gb"))]
@@ -81,22 +85,26 @@ rule makeCatalog:
             Bio.SeqIO.write(features, f, 'fasta')
 
 
+# --- Step 3: Build a BlastDB of reference features --------------------------
+
 rule makeBlastDb:
     """Build a BLASTn database from a catalog of sequences.
     """
 
     input:
-        "catalog/{sequences}.fa"
+        "catalog/{reference}.fa"
 
     output:
-        expand("db/{{sequences}}.{ext}", ext=["nhr", "nin", "nsq"])
+        expand("db/{{reference}}.{ext}", ext=["nhr", "nin", "nsq"])
 
     log:
-        "db/{sequences}.log"
+        "db/{reference}.log"
 
     shell:
-        "makeblastdb -dbtype nucl -out db/{wildcards.sequences} -title 'Annotations' -in {input} 2>&1 >{log}"
+        "makeblastdb -dbtype nucl -out db/{wildcards.reference} -title 'Annotations' -in {input} 2>&1 >{log}"
 
+
+# --- Step 4: Run each input sequence against the database of features -------
 
 rule runBlastN:
     """Run a BLASTn query against a reference BLASTn database.
@@ -114,6 +122,8 @@ rule runBlastN:
     shell:
         "blastn -task blastn-short -ungapped -outfmt 5 -db db/{wildcards.reference} -query {input[0]} >{output} 2>{log}"
 
+
+# --- Step 5: Copy features detected with `blastn` to the query --------------
 
 rule copyFeatures:
     """Copy features from reference sequences using BLASTn results as a guide.
