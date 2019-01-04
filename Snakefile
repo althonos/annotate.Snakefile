@@ -10,6 +10,9 @@ from Bio.Blast.Applications import NcbiblastnCommandline
 
 REFERENCE = config.get("reference", os.path.basename(next(glob.iglob("reference/*"))))
 CLEAR = config.get("clear", False)
+IDENTITY_THRESHOLD = float(config.get("identity", 0.98))
+
+assert 0 <= IDENTITY_THRESHOLD <= 1, "`identity` must be between 0 and 1"
 
 
 # --- Maintenance rules ------------------------------------------------------
@@ -150,7 +153,7 @@ rule copyFeatures:
         # FIXME: copy features only if alignment has 100% identity
         for alignment in result.alignments:
             hsp = alignment.hsps[0]
-            if (hsp.identities / hsp.align_length) > 0.98:
+            if (hsp.identities / hsp.align_length) > IDENTITY_THRESHOLD:
                 # get the GenBank file corresponding to the feature
                 hit_gb = os.path.join(input[2], "{}.gb".format(alignment.hit_def))
                 hit_record = Bio.SeqIO.read(hit_gb, "genbank")
