@@ -161,8 +161,11 @@ rule copyFeatures:
                 if hit_record.seq not in record.seq:
                     hit_record = hit_record.reverse_complement(features=True)
                 # position the feature on the query record
-                hit_feat = hit_record.features[0]
-                hit_feat.location += record.seq.find(hsp.query)
+                try:
+                    hit_feat = hit_record.features[0]
+                    hit_feat.location += record.seq.find(hsp.query)
+                except IndexError:
+                    continue
 
                 # add the feature to the query record
                 record.features.append(hit_feat)
