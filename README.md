@@ -2,6 +2,11 @@
 
 *A Snakemake pipeline to copy annotations between GenBank files*
 
+[![Source](https://img.shields.io/badge/source-GitHub-303030.svg?maxAge=86400&style=flat-square)](https://github.com/althonos/annotate.Snakefile/)
+[![Docker](https://img.shields.io/badge/docker%20build-automatic-blue.svg?maxAge=86400&style=flat-square)](https://hub.docker.com/r/althonos/annotate/)
+[![Snakemake](https://img.shields.io/badge/built%20with-snakemake-yellowgreen.svg?maxAge=86400&style=flat-square)](https://snakemake.readthedocs.io/en/stable/)
+
+
 ## Usage
 
 ### In-site pipeline
